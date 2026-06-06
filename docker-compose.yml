@@ -1,0 +1,126 @@
+services:
+  chatbot-frontend-nextjs:
+    build:
+      context: ./chatbot-frontend-nextjs
+      dockerfile: infra/Dockerfile.dev
+    ports:
+      - "3001:3001"
+    environment:
+      NODE_ENV: development
+      API_TARGET: http://chatbot-backend-express:4000
+    volumes:
+      - ./chatbot-frontend-nextjs:/app
+      - /app/node_modules
+    depends_on:
+      chatbot-backend-express:
+        condition: service_healthy
+    restart: unless-stopped
+
+  mcp-server-nestjs:
+    build:
+      context: ./mcp-server-nestjs
+      dockerfile: infra/Dockerfile.dev
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: development
+      PORT: 3000
+      USER_SERVICE_URL: http://user-service-express:4001
+    volumes:
+      - ./mcp-server-nestjs:/app
+      - /app/node_modules
+    depends_on:
+      - user-service-express
+    restart: unless-stopped
+
+  chatbot-backend-express:
+    build:
+      context: ./chatbot-backend-express
+      dockerfile: infra/Dockerfile.dev
+    ports:
+      - "4000:4000"
+    environment:
+      NODE_ENV: development
+      PORT: 4000
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      MCP_SERVER_URL: http://mcp-server-nestjs:3000
+      DB_HOST: chatbot-backend-db
+      DB_PORT: 5432
+      DB_USERNAME: postgres
+      DB_PASSWORD: admin
+      DB_DATABASE: ai_chatbot
+    volumes:
+      - ./chatbot-backend-express:/app
+      - /app/node_modules
+    depends_on:
+      chatbot-backend-db:
+        condition: service_healthy
+      mcp-server-nestjs:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:4000/api/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  chatbot-backend-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: admin
+      POSTGRES_DB: ai_chatbot
+    ports:
+      - "5433:5432"
+    volumes:
+      - chatbot-backend-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ai_chatbot"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  user-service-express:
+    build:
+      context: ./user-service-express
+      dockerfile: infra/Dockerfile.dev
+    ports:
+      - "4001:4001"
+    environment:
+      NODE_ENV: development
+      PORT: 4001
+      DB_HOST: user-service-db
+      DB_PORT: 5432
+      DB_USERNAME: postgres
+      DB_PASSWORD: admin
+      DB_DATABASE: user_service
+    volumes:
+      - ./user-service-express:/app
+      - /app/node_modules
+    depends_on:
+      user-service-db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  user-service-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: admin
+      POSTGRES_DB: user_service
+    ports:
+      - "5432:5432"
+    volumes:
+      - user-service-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d user_service"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  chatbot-backend-db-data:
+  user-service-db-data:

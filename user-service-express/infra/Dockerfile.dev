@@ -1,0 +1,6 @@
+FROM node:20-alpine
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+EXPOSE 4001
+CMD ["node_modules/.bin/ts-node-dev", "--respawn", "--transpile-only", "--project", "tsconfig.json", "src/server.ts"]
